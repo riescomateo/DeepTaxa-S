@@ -92,9 +92,23 @@ else:
 test_df = test_df.head(30)
 print(f"Limitando evaluación a {len(test_df)} muestras.")
 
-# Función para generar embeddings en lotes
-
-def get_embeddings_batched(sequences, batch_size=8):
+# Función para generar embeddings en lotes (con soporte de caché)
+def get_embeddings_batched(sequences, batch_size=8, cache_path='data/test_embeddings_s.npy'):
+    # Intentar cargar embeddings pre-calculados
+    if os.path.exists(cache_path):
+        print(f"Cargando embeddings pre-calculados desde {cache_path}...")
+        all_embeddings = np.load(cache_path)
+        
+        # Verificar que coincida el número de secuencias
+        if len(all_embeddings) == len(sequences):
+            print(f"Embeddings cargados correctamente: {all_embeddings.shape}")
+            return all_embeddings
+        else:
+            print(f"Advertencia: Caché tiene {len(all_embeddings)} embeddings pero se necesitan {len(sequences)}.")
+            print("Regenerando embeddings...")
+    
+    # Si no existe caché o no coincide, generar embeddings
+    print("Generando embeddings...")
     all_embeddings = []
     for i in tqdm(range(0, len(sequences), batch_size), desc="Generando Embeddings"):
         batch = sequences[i:i+batch_size]
