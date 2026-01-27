@@ -9,7 +9,6 @@ DNABERT_finetune/
 venv/
 .venv/
 env/
-data/
 *.csv
 *.fasta
 !dataset.csv
