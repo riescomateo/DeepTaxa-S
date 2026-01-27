@@ -1,9 +1,15 @@
 chroma_db/
 *.bin
 *.sqlite3
-data/test_dataset_cache.csv
 DNABERT_finetune/dnabert_env/
 DNABERT_finetune/__pycache__/
 DNABERT_finetune/debug_output/
 DNABERT_finetune/
 *.log
+venv/
+.venv/
+env/
+data/
+*.csv
+*.fasta
+!data/dataset.csv
