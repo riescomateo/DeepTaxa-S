@@ -1,7 +1,7 @@
 import os
 import re
 
-file_path = "/home/ubuntu/.cache/huggingface/modules/transformers_modules/zhihan1996/DNABERT-S/00e47f96cdea35e4b6f5df89e5419cbe47d490c6/flash_attn_triton.py"
+file_path = "/root/.cache/huggingface/modules/transformers_modules/zhihan1996/DNABERT_hyphen_S/00e47f96cdea35e4b6f5df89e5419cbe47d490c6/flash_attn_triton.py"
 
 if not os.path.exists(file_path):
     print(f"File not found: {file_path}")
