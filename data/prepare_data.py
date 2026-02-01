@@ -2,7 +2,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 db = pd.read_csv("dataset.csv")
-db.rename(columns={'Sequence': 'DNABERT_Sequence'}, inplace=True)
 
 animal_phyla = [
     'Chordata_7711',
