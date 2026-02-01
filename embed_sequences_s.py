@@ -12,7 +12,7 @@ CSV_PATH = 'data/final_dataset.csv'
 MODEL_NAME = 'zhihan1996/DNABERT-S'
 MILVUS_DB_PATH = 'gpuhub-tmp/milvus_db/milvus.db'
 COLLECTION_NAME = 'dna_sequences_s'
-BATCH_SIZE = 32  # Increased for dual GPU (16 per GPU)
+BATCH_SIZE = 64  # Increased for dual GPU (16 per GPU)
 INSERT_BATCH_SIZE = 2048
 MAX_LEN = 768
 
