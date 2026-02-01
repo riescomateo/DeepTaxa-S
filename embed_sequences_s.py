@@ -6,19 +6,25 @@ from tqdm import tqdm
 import os
 from sklearn.model_selection import train_test_split
 import traceback
+import json  # ← AGREGADO
+from datetime import datetime  # ← AGREGADO
 
 # Configuración
 CSV_PATH = 'data/final_dataset.csv'
 MODEL_NAME = 'zhihan1996/DNABERT-S'
 MILVUS_DB_PATH = 'gpuhub-tmp/milvus_db/milvus.db'
 COLLECTION_NAME = 'dna_sequences_s'
-BATCH_SIZE = 64  # Increased for dual GPU (16 per GPU)
+BATCH_SIZE = 64
 INSERT_BATCH_SIZE = 2048
 MAX_LEN = 768
 
 # ============================================
-# Inicializar Dispositivo (Multi-GPU)
+# CHECKPOINT CONFIGURATION ← NUEVO
 # ============================================
+CHECKPOINT_FILE = 'embedding_checkpoint.json'
+CHECKPOINT_INTERVAL = 500  # Guardar cada 500 batches
+
+# Inicializar Dispositivo (Multi-GPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Usando dispositivo: {device}")
 
@@ -33,18 +39,13 @@ else:
     print("⚠️ No GPU disponible")
     num_gpus = 0
 
-# ============================================
 # Inicializar Modelo y Tokenizador
-# ============================================
 print("\nCargando modelo y tokenizador...")
 try:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
     model = AutoModel.from_pretrained(MODEL_NAME, trust_remote_code=True)
-    
-    # Move to GPU BEFORE wrapping with DataParallel
     model = model.to(device)
     
-    # Enable DataParallel for multi-GPU
     if num_gpus > 1:
         print(f"\n🚀 Activando DataParallel en {num_gpus} GPUs...")
         model = torch.nn.DataParallel(model)
@@ -57,9 +58,7 @@ except Exception as e:
     print(f"Error cargando el modelo: {e}")
     exit(1)
 
-# ============================================
 # Inicializar Milvus
-# ============================================
 print("\nInicializando Milvus...")
 try:
     if not os.path.exists(os.path.dirname(MILVUS_DB_PATH)):
@@ -83,39 +82,26 @@ except Exception as e:
     print(f"Error inicializando Milvus: {e}")
     exit(1)
 
-# ============================================
 # Función para generar embeddings
-# ============================================
 def get_embeddings(sequences):
-    """Generate embeddings with multi-GPU support"""
-    # Clean sequences
     sequences = [s.replace('\n', '').strip() for s in sequences]
-    
-    # Tokenize
     inputs = tokenizer(sequences, return_tensors="pt", padding=True, 
                       truncation=True, max_length=MAX_LEN)
     inputs = {k: v.to(device) for k, v in inputs.items()}
     
-    # Generate embeddings
     with torch.no_grad():
         outputs = model(**inputs)
     
-    # Extract [CLS] token embeddings
-    # Note: DataParallel wraps output, so we access it the same way
     embeddings = outputs[0][:, 0, :].cpu().numpy()
-    
     return embeddings
 
-# ============================================
 # Procesar CSV en fragmentos
-# ============================================
 print(f"\nProcesando {CSV_PATH}...")
 
 if not os.path.exists(CSV_PATH):
     print(f"Archivo no encontrado: {CSV_PATH}")
     exit(1)
 
-# Load and sample data
 print("Muestreando 100% del conjunto de datos...")
 chunks = []
 read_chunk_size = 50000 
@@ -131,7 +117,6 @@ except Exception as e:
 df_sample = pd.concat(chunks)
 print(f"Muestreadas {len(df_sample)} secuencias.")
 
-# Train/test split
 print("Realizando División Entrenamiento/Prueba (80/20)...")
 train_df, test_df = train_test_split(df_sample, test_size=0.2, random_state=42)
 train_df['split'] = 'train'
@@ -141,12 +126,43 @@ processing_df = train_df
 print(f"Procesando solo conjunto de entrenamiento ({len(processing_df)} secuencias). Test set ignorado.")
 
 # ============================================
+# LOAD CHECKPOINT ← NUEVO
+# ============================================
+start_batch = 0
+if os.path.exists(CHECKPOINT_FILE):
+    try:
+        with open(CHECKPOINT_FILE, 'r') as f:
+            checkpoint = json.load(f)
+        
+        start_batch = checkpoint.get('last_batch', 0)
+        prev_sequences = checkpoint.get('sequences_processed', 0)
+        
+        print(f"\n{'='*60}")
+        print(f"🔄 CHECKPOINT ENCONTRADO")
+        print(f"{'='*60}")
+        print(f"Último batch completado: {start_batch:,}")
+        print(f"Secuencias ya procesadas: {prev_sequences:,}")
+        print(f"Progreso previo: {(start_batch * BATCH_SIZE / len(processing_df)) * 100:.1f}%")
+        print(f"Reanudando desde batch {start_batch + 1}...")
+        print(f"{'='*60}\n")
+        
+        # Adjust start_batch to continue from next batch
+        start_batch = start_batch + 1
+        
+    except Exception as e:
+        print(f"⚠️ Error leyendo checkpoint: {e}")
+        print("Comenzando desde el principio...")
+        start_batch = 0
+else:
+    print("\n🆕 No se encontró checkpoint. Comenzando desde el principio.\n")
+
+# ============================================
 # Process in batches
 # ============================================
 total_rows = len(processing_df)
 num_batches = (total_rows + BATCH_SIZE - 1) // BATCH_SIZE
 
-print(f"\n{'='*60}")
+print(f"{'='*60}")
 print(f"🚀 INICIANDO GENERACIÓN DE EMBEDDINGS")
 print(f"{'='*60}")
 print(f"Total secuencias: {total_rows:,}")
@@ -154,19 +170,25 @@ print(f"Batch size: {BATCH_SIZE} (total)")
 if num_gpus > 1:
     print(f"Por GPU: {BATCH_SIZE//num_gpus} (batch dividido automáticamente)")
 print(f"Total batches: {num_batches:,}")
+print(f"Comenzando desde batch: {start_batch:,}")
+print(f"Batches restantes: {num_batches - start_batch:,}")
 print(f"{'='*60}\n")
 
 data_buffer = []
+batch_count = 0
 
-for i in tqdm(range(0, total_rows, BATCH_SIZE), desc="Lotes de embeddings"):
+for batch_idx in tqdm(range(start_batch, num_batches), 
+                     desc="Lotes de embeddings",
+                     initial=start_batch,
+                     total=num_batches):
+    
+    i = batch_idx * BATCH_SIZE
     batch_df = processing_df.iloc[i : i + BATCH_SIZE]
     
     try:
-        # Extract data
         sequences = batch_df['Sequence'].astype(str).tolist()
         headers = batch_df['Header'].astype(str).tolist()
         
-        # Prepare metadata
         metadatas = []
         for _, row in batch_df.iterrows():
             meta = {
@@ -181,10 +203,8 @@ for i in tqdm(range(0, total_rows, BATCH_SIZE), desc="Lotes de embeddings"):
             }
             metadatas.append(meta)
             
-        # Generate embeddings (automatically uses both GPUs)
         embeddings = get_embeddings(sequences)
         
-        # Add to buffer
         for j in range(len(sequences)):
             data_buffer.append({
                 "id": headers[j],
@@ -193,37 +213,97 @@ for i in tqdm(range(0, total_rows, BATCH_SIZE), desc="Lotes de embeddings"):
                 **metadatas[j]
             })
             
-        # Insert to Milvus when buffer is full
         if len(data_buffer) >= INSERT_BATCH_SIZE:
-            client.upsert(
-                collection_name=COLLECTION_NAME,
-                data=data_buffer
-            )
+            client.upsert(collection_name=COLLECTION_NAME, data=data_buffer)
             data_buffer = []
         
-        # Clear GPU cache periodically to avoid memory buildup
-        if i % (BATCH_SIZE * 50) == 0 and torch.cuda.is_available():
+        batch_count += 1
+        
+        # ============================================
+        # SAVE CHECKPOINT ← NUEVO
+        # ============================================
+        if batch_count % CHECKPOINT_INTERVAL == 0:
+            checkpoint_data = {
+                'last_batch': batch_idx,
+                'sequences_processed': (batch_idx + 1) * BATCH_SIZE,
+                'total_sequences': total_rows,
+                'progress_percent': ((batch_idx + 1) / num_batches) * 100,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            with open(CHECKPOINT_FILE, 'w') as f:
+                json.dump(checkpoint_data, f, indent=2)
+            
+            # Print checkpoint info quietly (no disrupting progress bar)
+            tqdm.write(f"💾 Checkpoint guardado: batch {batch_idx:,} " +
+                      f"({checkpoint_data['progress_percent']:.1f}% completo)")
+        
+        # Clear GPU cache periodically
+        if batch_count % 50 == 0 and torch.cuda.is_available():
             torch.cuda.empty_cache()
         
+    except KeyboardInterrupt:
+        # ============================================
+        # SAVE ON INTERRUPT ← NUEVO
+        # ============================================
+        print(f"\n\n⚠️ Proceso interrumpido por el usuario")
+        print(f"Guardando checkpoint en batch {batch_idx}...")
+        
+        checkpoint_data = {
+            'last_batch': batch_idx - 1,  # Last completed batch
+            'sequences_processed': batch_idx * BATCH_SIZE,
+            'total_sequences': total_rows,
+            'progress_percent': (batch_idx / num_batches) * 100,
+            'timestamp': datetime.now().isoformat(),
+            'interrupted': True
+        }
+        
+        with open(CHECKPOINT_FILE, 'w') as f:
+            json.dump(checkpoint_data, f, indent=2)
+        
+        print(f"✅ Checkpoint guardado exitosamente")
+        print(f"Para continuar, ejecuta el script nuevamente")
+        exit(0)
+        
     except Exception as e:
-        print(f"\n❌ Error procesando lote comenzando en índice {i}: {e}")
+        # ============================================
+        # SAVE ON ERROR ← NUEVO
+        # ============================================
+        print(f"\n❌ Error procesando lote en batch {batch_idx}: {e}")
         traceback.print_exc()
+        
+        print(f"Guardando checkpoint...")
+        checkpoint_data = {
+            'last_batch': batch_idx - 1,
+            'sequences_processed': batch_idx * BATCH_SIZE,
+            'total_sequences': total_rows,
+            'progress_percent': (batch_idx / num_batches) * 100,
+            'timestamp': datetime.now().isoformat(),
+            'error': str(e)
+        }
+        
+        with open(CHECKPOINT_FILE, 'w') as f:
+            json.dump(checkpoint_data, f, indent=2)
+        
+        print(f"✅ Checkpoint guardado. Puedes reintentar desde este punto.")
         break
 
 # Insert remaining data
 if data_buffer:
-    print(f"\nInsertando {len(data_buffer)} elementos restantes...")
+    print(f"\n💾 Insertando {len(data_buffer)} elementos restantes...")
     try:
-        client.upsert(
-            collection_name=COLLECTION_NAME,
-            data=data_buffer
-        )
+        client.upsert(collection_name=COLLECTION_NAME, data=data_buffer)
     except Exception as e:
         print(f"Error insertando lote final: {e}")
 
 # ============================================
-# Create index
+# CLEANUP CHECKPOINT ← NUEVO
 # ============================================
+if os.path.exists(CHECKPOINT_FILE):
+    os.remove(CHECKPOINT_FILE)
+    print("\n✅ Checkpoint eliminado - proceso completado exitosamente")
+
+# Create index
 print("\nGenerando índice HNSW...")
 try:
     index_params = client.prepare_index_params()
@@ -233,29 +313,25 @@ try:
         metric_type="COSINE",
         params={}
     )
-    client.create_index(
-        collection_name=COLLECTION_NAME,
-        index_params=index_params
-    )
+    client.create_index(collection_name=COLLECTION_NAME, index_params=index_params)
     print("✅ Índice creado exitosamente.")
 except Exception as e:
     print(f"⚠️ Nota al crear índice: {e}")
 
-# ============================================
 # Summary
-# ============================================
 print("\n" + "="*60)
 print("✅ ¡PROCESO COMPLETADO!")
 print("="*60)
 print(f"Embeddings almacenados en: {MILVUS_DB_PATH}")
 print(f"Colección: {COLLECTION_NAME}")
+
 if torch.cuda.is_available():
     for i in range(num_gpus):
         mem_allocated = torch.cuda.memory_allocated(i) / 1e9
         mem_cached = torch.cuda.memory_reserved(i) / 1e9
         print(f"GPU {i} memoria usada: {mem_allocated:.2f}GB / {mem_cached:.2f}GB cached")
+
 print("="*60)
 
-# Clear GPU memory
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
