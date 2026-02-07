@@ -17,6 +17,7 @@ COLLECTION_NAME = 'dna_sequences_s'
 BATCH_SIZE = 64
 INSERT_BATCH_SIZE = 2048
 MAX_LEN = 768
+TEST_CACHE_PATH = 'data/test_dataset_cache.csv' 
 
 # ============================================
 # CHECKPOINT CONFIGURATION ← NUEVO
@@ -117,13 +118,31 @@ except Exception as e:
 df_sample = pd.concat(chunks)
 print(f"Muestreadas {len(df_sample)} secuencias.")
 
+# Train/test split
 print("Realizando División Entrenamiento/Prueba (80/20)...")
 train_df, test_df = train_test_split(df_sample, test_size=0.2, random_state=42)
 train_df['split'] = 'train'
 test_df['split'] = 'test'
 
+# ============================================
+# GUARDAR TEST SET ← NUEVO
+# ============================================
+if not os.path.exists(TEST_CACHE_PATH):
+    print(f"\n💾 Guardando test set en {TEST_CACHE_PATH}...")
+    test_df.to_csv(TEST_CACHE_PATH, index=False)
+    print(f"   ✅ Test set guardado: {len(test_df):,} secuencias")
+    print(f"   📁 Ubicación: {TEST_CACHE_PATH}")
+else:
+    print(f"\n✅ Test set ya existe en {TEST_CACHE_PATH}")
+    # Verificar que coincide
+    existing_test = pd.read_csv(TEST_CACHE_PATH)
+    if len(existing_test) != len(test_df):
+        print(f"   ⚠️ WARNING: Tamaño diferente!")
+        print(f"   Existente: {len(existing_test):,} | Actual: {len(test_df):,}")
+        print(f"   Considera eliminar {TEST_CACHE_PATH} y volver a ejecutar")
+
 processing_df = train_df
-print(f"Procesando solo conjunto de entrenamiento ({len(processing_df)} secuencias). Test set ignorado.")
+print(f"\nProcesando solo conjunto de entrenamiento ({len(processing_df)} secuencias). Test set ignorado.")
 
 # ============================================
 # LOAD CHECKPOINT ← NUEVO

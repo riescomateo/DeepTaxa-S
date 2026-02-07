@@ -12,3 +12,5 @@ env/
 *.csv
 *.fasta
 !dataset.csv
+
+gpuhub-tmp/
