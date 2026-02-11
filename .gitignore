@@ -1,16 +1,21 @@
-chroma_db/
-*.bin
-*.sqlite3
-DNABERT_finetune/dnabert_env/
-DNABERT_finetune/__pycache__/
-DNABERT_finetune/debug_output/
-DNABERT_finetune/
-*.log
+# Python - Archivos temporales
+__pycache__/
+*.py[cod]
+*$py.class
 venv/
-.venv/
-env/
-*.csv
-*.fasta
-!dataset.csv
+.env
 
+# Datos y Pesados (No queremos subir gigas a GitHub)
+data/*.csv
+data/*.npy
+data/*.ipynb_checkpoints
+*.npy
+results/
+
+# Base de Datos (Milvus local)
 gpuhub-tmp/
+*.db
+
+# Configuración de editores
+.vscode/
+.idea/

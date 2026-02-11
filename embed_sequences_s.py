@@ -6,10 +6,10 @@ from tqdm import tqdm
 import os
 from sklearn.model_selection import train_test_split
 import traceback
-import json  # ← AGREGADO
-from datetime import datetime  # ← AGREGADO
+import json
+from datetime import datetime
 
-# Configuración
+# Configuration
 CSV_PATH = 'data/final_dataset.csv'
 MODEL_NAME = 'zhihan1996/DNABERT-S'
 MILVUS_DB_PATH = 'gpuhub-tmp/milvus_db/milvus.db'
@@ -17,50 +17,50 @@ COLLECTION_NAME = 'dna_sequences_s'
 BATCH_SIZE = 64
 INSERT_BATCH_SIZE = 2048
 MAX_LEN = 768
-TEST_CACHE_PATH = 'data/test_dataset_cache.csv' 
+TEST_CACHE_PATH = 'data/test_dataset_cache.csv'
 
 # ============================================
-# CHECKPOINT CONFIGURATION ← NUEVO
+# CHECKPOINT CONFIGURATION
 # ============================================
 CHECKPOINT_FILE = 'embedding_checkpoint.json'
-CHECKPOINT_INTERVAL = 500  # Guardar cada 500 batches
+CHECKPOINT_INTERVAL = 500  # Save every 500 batches
 
-# Inicializar Dispositivo (Multi-GPU)
+# Initialize Device (Multi-GPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Usando dispositivo: {device}")
+print(f"Using device: {device}")
 
 # Check GPU availability
 if torch.cuda.is_available():
     num_gpus = torch.cuda.device_count()
-    print(f"GPUs disponibles: {num_gpus}")
+    print(f"Available GPUs: {num_gpus}")
     for i in range(num_gpus):
         print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
-        print(f"    Memoria: {torch.cuda.get_device_properties(i).total_memory / 1e9:.2f} GB")
+        print(f"    Memory: {torch.cuda.get_device_properties(i).total_memory / 1e9:.2f} GB")
 else:
-    print("⚠️ No GPU disponible")
+    print("⚠️ No GPU available")
     num_gpus = 0
 
-# Inicializar Modelo y Tokenizador
-print("\nCargando modelo y tokenizador...")
+# Initialize Model and Tokenizer
+print("\nLoading model and tokenizer...")
 try:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
     model = AutoModel.from_pretrained(MODEL_NAME, trust_remote_code=True)
     model = model.to(device)
     
     if num_gpus > 1:
-        print(f"\n🚀 Activando DataParallel en {num_gpus} GPUs...")
+        print(f"\n🚀 Enabling DataParallel on {num_gpus} GPUs...")
         model = torch.nn.DataParallel(model)
-        print(f"   Batch será dividido: {BATCH_SIZE} total → {BATCH_SIZE//num_gpus} por GPU")
+        print(f"   Batch will be split: {BATCH_SIZE} total → {BATCH_SIZE//num_gpus} per GPU")
     
     model.eval()
-    print("✅ Modelo cargado exitosamente")
+    print("✅ Model loaded successfully")
     
 except Exception as e:
-    print(f"Error cargando el modelo: {e}")
+    print(f"Error loading model: {e}")
     exit(1)
 
-# Inicializar Milvus
-print("\nInicializando Milvus...")
+# Initialize Milvus
+print("\nInitializing Milvus...")
 try:
     if not os.path.exists(os.path.dirname(MILVUS_DB_PATH)):
         os.makedirs(os.path.dirname(MILVUS_DB_PATH))
@@ -68,7 +68,7 @@ try:
     client = MilvusClient(uri=MILVUS_DB_PATH)
     
     if client.has_collection(COLLECTION_NAME):
-        print(f"Colección '{COLLECTION_NAME}' ya existe.")
+        print(f"Collection '{COLLECTION_NAME}' already exists.")
     else:
         client.create_collection(
             collection_name=COLLECTION_NAME,
@@ -78,15 +78,15 @@ try:
             metric_type="COSINE",
             auto_id=False
         )
-        print(f"Colección '{COLLECTION_NAME}' creada (sin índice inicial).")
+        print(f"Collection '{COLLECTION_NAME}' created (no initial index).")
 except Exception as e:
-    print(f"Error inicializando Milvus: {e}")
+    print(f"Error initializing Milvus: {e}")
     exit(1)
 
-# Función para generar embeddings
+# Function to generate embeddings
 def get_embeddings(sequences):
     sequences = [s.replace('\n', '').strip() for s in sequences]
-    inputs = tokenizer(sequences, return_tensors="pt", padding=True, 
+    inputs = tokenizer(sequences, return_tensors="pt", padding=True,
                       truncation=True, max_length=MAX_LEN)
     inputs = {k: v.to(device) for k, v in inputs.items()}
     
@@ -96,56 +96,56 @@ def get_embeddings(sequences):
     embeddings = outputs[0][:, 0, :].cpu().numpy()
     return embeddings
 
-# Procesar CSV en fragmentos
-print(f"\nProcesando {CSV_PATH}...")
+# Process CSV in chunks
+print(f"\nProcessing {CSV_PATH}...")
 
 if not os.path.exists(CSV_PATH):
-    print(f"Archivo no encontrado: {CSV_PATH}")
+    print(f"File not found: {CSV_PATH}")
     exit(1)
 
-print("Muestreando 100% del conjunto de datos...")
+print("Sampling 100% of the dataset...")
 chunks = []
-read_chunk_size = 50000 
+read_chunk_size = 50000
 
 try:
-    for chunk in tqdm(pd.read_csv(CSV_PATH, chunksize=read_chunk_size), desc="Leyendo y muestreando"):
+    for chunk in tqdm(pd.read_csv(CSV_PATH, chunksize=read_chunk_size), desc="Reading and sampling"):
         sampled_chunk = chunk.sample(frac=1.0, random_state=42)
         chunks.append(sampled_chunk)
 except Exception as e:
-    print(f"Error leyendo CSV: {e}")
+    print(f"Error reading CSV: {e}")
     exit(1)
 
 df_sample = pd.concat(chunks)
-print(f"Muestreadas {len(df_sample)} secuencias.")
+print(f"Sampled {len(df_sample)} sequences.")
 
 # Train/test split
-print("Realizando División Entrenamiento/Prueba (80/20)...")
+print("Performing Train/Test Split (80/20)...")
 train_df, test_df = train_test_split(df_sample, test_size=0.2, random_state=42)
 train_df['split'] = 'train'
 test_df['split'] = 'test'
 
 # ============================================
-# GUARDAR TEST SET ← NUEVO
+# SAVE TEST SET
 # ============================================
 if not os.path.exists(TEST_CACHE_PATH):
-    print(f"\n💾 Guardando test set en {TEST_CACHE_PATH}...")
+    print(f"\n💾 Saving test set to {TEST_CACHE_PATH}...")
     test_df.to_csv(TEST_CACHE_PATH, index=False)
-    print(f"   ✅ Test set guardado: {len(test_df):,} secuencias")
-    print(f"   📁 Ubicación: {TEST_CACHE_PATH}")
+    print(f"   ✅ Test set saved: {len(test_df):,} sequences")
+    print(f"   📁 Location: {TEST_CACHE_PATH}")
 else:
-    print(f"\n✅ Test set ya existe en {TEST_CACHE_PATH}")
-    # Verificar que coincide
+    print(f"\n✅ Test set already exists at {TEST_CACHE_PATH}")
+    # Verify it matches
     existing_test = pd.read_csv(TEST_CACHE_PATH)
     if len(existing_test) != len(test_df):
-        print(f"   ⚠️ WARNING: Tamaño diferente!")
-        print(f"   Existente: {len(existing_test):,} | Actual: {len(test_df):,}")
-        print(f"   Considera eliminar {TEST_CACHE_PATH} y volver a ejecutar")
+        print(f"   ⚠️ WARNING: Size mismatch!")
+        print(f"   Existing: {len(existing_test):,} | Current: {len(test_df):,}")
+        print(f"   Consider deleting {TEST_CACHE_PATH} and re-running")
 
 processing_df = train_df
-print(f"\nProcesando solo conjunto de entrenamiento ({len(processing_df)} secuencias). Test set ignorado.")
+print(f"\nProcessing training set only ({len(processing_df)} sequences). Test set skipped.")
 
 # ============================================
-# LOAD CHECKPOINT ← NUEVO
+# LOAD CHECKPOINT
 # ============================================
 start_batch = 0
 if os.path.exists(CHECKPOINT_FILE):
@@ -157,23 +157,23 @@ if os.path.exists(CHECKPOINT_FILE):
         prev_sequences = checkpoint.get('sequences_processed', 0)
         
         print(f"\n{'='*60}")
-        print(f"🔄 CHECKPOINT ENCONTRADO")
+        print(f"🔄 CHECKPOINT FOUND")
         print(f"{'='*60}")
-        print(f"Último batch completado: {start_batch:,}")
-        print(f"Secuencias ya procesadas: {prev_sequences:,}")
-        print(f"Progreso previo: {(start_batch * BATCH_SIZE / len(processing_df)) * 100:.1f}%")
-        print(f"Reanudando desde batch {start_batch + 1}...")
+        print(f"Last completed batch: {start_batch:,}")
+        print(f"Sequences already processed: {prev_sequences:,}")
+        print(f"Previous progress: {(start_batch * BATCH_SIZE / len(processing_df)) * 100:.1f}%")
+        print(f"Resuming from batch {start_batch + 1}...")
         print(f"{'='*60}\n")
         
         # Adjust start_batch to continue from next batch
         start_batch = start_batch + 1
         
     except Exception as e:
-        print(f"⚠️ Error leyendo checkpoint: {e}")
-        print("Comenzando desde el principio...")
+        print(f"⚠️ Error reading checkpoint: {e}")
+        print("Starting from the beginning...")
         start_batch = 0
 else:
-    print("\n🆕 No se encontró checkpoint. Comenzando desde el principio.\n")
+    print("\n🆕 No checkpoint found. Starting from the beginning.\n")
 
 # ============================================
 # Process in batches
@@ -182,22 +182,22 @@ total_rows = len(processing_df)
 num_batches = (total_rows + BATCH_SIZE - 1) // BATCH_SIZE
 
 print(f"{'='*60}")
-print(f"🚀 INICIANDO GENERACIÓN DE EMBEDDINGS")
+print(f"🚀 STARTING EMBEDDING GENERATION")
 print(f"{'='*60}")
-print(f"Total secuencias: {total_rows:,}")
+print(f"Total sequences: {total_rows:,}")
 print(f"Batch size: {BATCH_SIZE} (total)")
 if num_gpus > 1:
-    print(f"Por GPU: {BATCH_SIZE//num_gpus} (batch dividido automáticamente)")
+    print(f"Per GPU: {BATCH_SIZE//num_gpus} (batch split automatically)")
 print(f"Total batches: {num_batches:,}")
-print(f"Comenzando desde batch: {start_batch:,}")
-print(f"Batches restantes: {num_batches - start_batch:,}")
+print(f"Starting from batch: {start_batch:,}")
+print(f"Remaining batches: {num_batches - start_batch:,}")
 print(f"{'='*60}\n")
 
 data_buffer = []
 batch_count = 0
 
-for batch_idx in tqdm(range(start_batch, num_batches), 
-                     desc="Lotes de embeddings",
+for batch_idx in tqdm(range(start_batch, num_batches),
+                     desc="Embedding batches",
                      initial=start_batch,
                      total=num_batches):
     
@@ -239,7 +239,7 @@ for batch_idx in tqdm(range(start_batch, num_batches),
         batch_count += 1
         
         # ============================================
-        # SAVE CHECKPOINT ← NUEVO
+        # SAVE CHECKPOINT
         # ============================================
         if batch_count % CHECKPOINT_INTERVAL == 0:
             checkpoint_data = {
@@ -253,9 +253,8 @@ for batch_idx in tqdm(range(start_batch, num_batches),
             with open(CHECKPOINT_FILE, 'w') as f:
                 json.dump(checkpoint_data, f, indent=2)
             
-            # Print checkpoint info quietly (no disrupting progress bar)
-            tqdm.write(f"💾 Checkpoint guardado: batch {batch_idx:,} " +
-                      f"({checkpoint_data['progress_percent']:.1f}% completo)")
+            tqdm.write(f"💾 Checkpoint saved: batch {batch_idx:,} " +
+                      f"({checkpoint_data['progress_percent']:.1f}% complete)")
         
         # Clear GPU cache periodically
         if batch_count % 50 == 0 and torch.cuda.is_available():
@@ -263,10 +262,10 @@ for batch_idx in tqdm(range(start_batch, num_batches),
         
     except KeyboardInterrupt:
         # ============================================
-        # SAVE ON INTERRUPT ← NUEVO
+        # SAVE ON INTERRUPT
         # ============================================
-        print(f"\n\n⚠️ Proceso interrumpido por el usuario")
-        print(f"Guardando checkpoint en batch {batch_idx}...")
+        print(f"\n\n⚠️ Process interrupted by user")
+        print(f"Saving checkpoint at batch {batch_idx}...")
         
         checkpoint_data = {
             'last_batch': batch_idx - 1,  # Last completed batch
@@ -280,18 +279,18 @@ for batch_idx in tqdm(range(start_batch, num_batches),
         with open(CHECKPOINT_FILE, 'w') as f:
             json.dump(checkpoint_data, f, indent=2)
         
-        print(f"✅ Checkpoint guardado exitosamente")
-        print(f"Para continuar, ejecuta el script nuevamente")
+        print(f"✅ Checkpoint saved successfully")
+        print(f"To resume, run the script again")
         exit(0)
         
     except Exception as e:
         # ============================================
-        # SAVE ON ERROR ← NUEVO
+        # SAVE ON ERROR
         # ============================================
-        print(f"\n❌ Error procesando lote en batch {batch_idx}: {e}")
+        print(f"\n❌ Error processing batch {batch_idx}: {e}")
         traceback.print_exc()
         
-        print(f"Guardando checkpoint...")
+        print(f"Saving checkpoint...")
         checkpoint_data = {
             'last_batch': batch_idx - 1,
             'sequences_processed': batch_idx * BATCH_SIZE,
@@ -304,26 +303,26 @@ for batch_idx in tqdm(range(start_batch, num_batches),
         with open(CHECKPOINT_FILE, 'w') as f:
             json.dump(checkpoint_data, f, indent=2)
         
-        print(f"✅ Checkpoint guardado. Puedes reintentar desde este punto.")
+        print(f"✅ Checkpoint saved. You can retry from this point.")
         break
 
 # Insert remaining data
 if data_buffer:
-    print(f"\n💾 Insertando {len(data_buffer)} elementos restantes...")
+    print(f"\n💾 Inserting {len(data_buffer)} remaining elements...")
     try:
         client.upsert(collection_name=COLLECTION_NAME, data=data_buffer)
     except Exception as e:
-        print(f"Error insertando lote final: {e}")
+        print(f"Error inserting final batch: {e}")
 
 # ============================================
-# CLEANUP CHECKPOINT ← NUEVO
+# CLEANUP CHECKPOINT
 # ============================================
 if os.path.exists(CHECKPOINT_FILE):
     os.remove(CHECKPOINT_FILE)
-    print("\n✅ Checkpoint eliminado - proceso completado exitosamente")
+    print("\n✅ Checkpoint deleted - process completed successfully")
 
 # Create index
-print("\nGenerando índice HNSW...")
+print("\nGenerating HNSW index...")
 try:
     index_params = client.prepare_index_params()
     index_params.add_index(
@@ -333,22 +332,22 @@ try:
         params={}
     )
     client.create_index(collection_name=COLLECTION_NAME, index_params=index_params)
-    print("✅ Índice creado exitosamente.")
+    print("✅ Index created successfully.")
 except Exception as e:
-    print(f"⚠️ Nota al crear índice: {e}")
+    print(f"⚠️ Note when creating index: {e}")
 
 # Summary
 print("\n" + "="*60)
-print("✅ ¡PROCESO COMPLETADO!")
+print("✅ PROCESS COMPLETED!")
 print("="*60)
-print(f"Embeddings almacenados en: {MILVUS_DB_PATH}")
-print(f"Colección: {COLLECTION_NAME}")
+print(f"Embeddings stored at: {MILVUS_DB_PATH}")
+print(f"Collection: {COLLECTION_NAME}")
 
 if torch.cuda.is_available():
     for i in range(num_gpus):
         mem_allocated = torch.cuda.memory_allocated(i) / 1e9
         mem_cached = torch.cuda.memory_reserved(i) / 1e9
-        print(f"GPU {i} memoria usada: {mem_allocated:.2f}GB / {mem_cached:.2f}GB cached")
+        print(f"GPU {i} memory used: {mem_allocated:.2f}GB / {mem_cached:.2f}GB cached")
 
 print("="*60)
 
