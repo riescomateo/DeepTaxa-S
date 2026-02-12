@@ -199,18 +199,6 @@ python evaluate_confidence.py
 
 ---
 
-## Confidence Methods
-
-The `--confidence_method` parameter (used internally in `classify_sequences.py` and `evaluate_confidence.py`) supports three modes:
-
-| Method     | Description                                                      |
-|------------|------------------------------------------------------------------|
-| `entropy`  | Shannon entropy over neighbor labels. Lower entropy = higher confidence. |
-| `agreement`| Fraction of K neighbors that agree with the top-1 prediction.   |
-| `combined` | Weighted average of entropy (40%), agreement (40%), and distance (20%). |
-
----
-
 ## Data Format
 
 Input CSVs must contain at minimum a `Sequence` column with raw nucleotide/protein sequences. A `Header` column is optional — if absent, sequential IDs (`seq_000001`, `seq_000002`, ...) are generated automatically.
