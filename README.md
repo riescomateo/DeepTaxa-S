@@ -32,7 +32,11 @@ Evaluated on a held-out 20% test set using Recall@K and Mean Reciprocal Rank (MR
 
 > Confidence filtering (`entropy` method, threshold `0.8`) was applied during evaluation runs. Metrics reflect performance on high-certainty predictions only.
 >
-> **Scope note:** While the system processes and stores full taxonomic hierarchy (Kingdom → Species), it is primarily optimized and validated at the **Genus level**, where it demonstrates its highest robustness and reliability. Species-level predictions are available but have not been independently benchmarked.
+> **Scope note:** While DeepTaxa-S processes and stores the complete taxonomic hierarchy (Kingdom → Species), the system is primarily optimized and validated at the Genus level.
+
+This decision is rooted in a fundamental biological challenge: the DNA barcoding gap. While the COI (Cytochrome c oxidase I) gene is the gold standard for molecular identification, it often lacks sufficient phylogenetic resolution to distinguish between closely related species. In many taxonomic groups, intraspecific variation can overlap with interspecific divergence, leading to "noise" that complicates species-level assignments.
+
+By focusing on the Genus level, DeepTaxa-S provides a high-confidence classification tool that remains robust against these evolutionary ambiguities, offering a more reliable balance for ecological and bioinformatic research.
 
 ---
 
