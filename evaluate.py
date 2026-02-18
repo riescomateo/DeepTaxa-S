@@ -23,9 +23,9 @@ BATCH_SIZE = 100  # Process queries in batches
 
 # Genus size ranges
 RANGES = {
-    'rare': (1, 5),      # 1-5 samples
-    'medium': (6, 20),   # 6-20 samples
-    'common': (21, float('inf'))  # 21+ samples
+    'rare': (1, 5),                  # 1-5 samples
+    'medium': (6, 20),               # 6-20 samples
+    'common': (21, float('inf'))     # 21+ samples
 }
 
 # ============================================
@@ -35,53 +35,53 @@ if not os.path.exists(RESULTS_DIR):
     os.makedirs(RESULTS_DIR)
 
 print("="*80)
-print("🧬 EVALUACIÓN DE RETRIEVAL POR TAMAÑO DE GÉNERO")
+print("🧬 RETRIEVAL EVALUATION BY GENUS SIZE")
 print("="*80)
 
 # ============================================
 # STEP 1: LOAD DATA
 # ============================================
-print("\n1️⃣ Cargando datos...")
+print("\n1️⃣ Loading data...")
 
 # Load test set
 if not os.path.exists(TEST_CACHE_PATH):
-    print(f"❌ Error: {TEST_CACHE_PATH} no encontrado")
+    print(f"❌ Error: {TEST_CACHE_PATH} not found")
     exit(1)
 test_df = pd.read_csv(TEST_CACHE_PATH)
-print(f"   ✅ Test set: {len(test_df):,} secuencias")
+print(f"   ✅ Test set: {len(test_df):,} sequences")
 
 # Load test embeddings
 if not os.path.exists(TEST_EMBEDDINGS_PATH):
-    print(f"❌ Error: {TEST_EMBEDDINGS_PATH} no encontrado")
-    print("   Ejecuta primero: python generate_test_embeddings.py")
+    print(f"❌ Error: {TEST_EMBEDDINGS_PATH} not found")
+    print("   Run first: python generate_test_embeddings.py")
     exit(1)
 test_embeddings = np.load(TEST_EMBEDDINGS_PATH)
 print(f"   ✅ Test embeddings: {test_embeddings.shape}")
 
 # Verify alignment
 if len(test_df) != len(test_embeddings):
-    print(f"❌ Error: Desalineación de datos")
+    print(f"❌ Error: Data misalignment")
     print(f"   Test DF: {len(test_df)}, Embeddings: {len(test_embeddings)}")
     exit(1)
 
 # Load original dataset to count genus samples
-print(f"   📊 Analizando dataset original...")
+print(f"   📊 Analyzing original dataset...")
 original_df = pd.read_csv(ORIGINAL_DATASET_PATH)
-print(f"   ✅ Dataset original: {len(original_df):,} secuencias")
+print(f"   ✅ Original dataset: {len(original_df):,} sequences")
 
 # ============================================
 # STEP 2: ANALYZE GENUS DISTRIBUTION
 # ============================================
-print("\n2️⃣ Analizando distribución de géneros...")
+print("\n2️⃣ Analyzing genus distribution...")
 
 # Count samples per genus in TRAIN set (Milvus collection)
-# We need to filter only train split from original
+# Filter only train split from original
 train_df = original_df[original_df['Header'].isin(
     set(original_df['Header']) - set(test_df['Header'])
 )]
 
 genus_counts = train_df['Genus'].value_counts().to_dict()
-print(f"   ✅ {len(genus_counts)} géneros únicos en train set")
+print(f"   ✅ {len(genus_counts)} unique genera in train set")
 
 # Categorize test samples by genus size
 test_df['genus_sample_count'] = test_df['Genus'].map(genus_counts).fillna(0).astype(int)
@@ -101,31 +101,31 @@ test_df['category'] = test_df['Genus'].map(category_assignment)
 test_df_valid = test_df[test_df['category'].notna()].copy()
 removed = len(test_df) - len(test_df_valid)
 if removed > 0:
-    print(f"   ⚠️ Removidas {removed} muestras sin género en train set")
+    print(f"   ⚠️ Removed {removed} samples with no genus in train set")
 
-print("\n   📊 Distribución de muestras de test por categoría:")
+print("\n   📊 Test sample distribution by category:")
 for cat_name, (min_val, max_val) in RANGES.items():
     cat_samples = (test_df_valid['category'] == cat_name).sum()
     cat_genera = test_df_valid[test_df_valid['category'] == cat_name]['Genus'].nunique()
     range_str = f"{min_val}-{int(max_val) if max_val != float('inf') else '∞'}"
-    print(f"   • {cat_name.upper():8} ({range_str:8} samples): {cat_samples:6,} queries ({cat_genera:4} géneros)")
+    print(f"   • {cat_name.upper():8} ({range_str:8} samples): {cat_samples:6,} queries ({cat_genera:4} genera)")
 
 # ============================================
 # STEP 3: INITIALIZE MILVUS
 # ============================================
-print("\n3️⃣ Conectando a Milvus...")
+print("\n3️⃣ Connecting to Milvus...")
 try:
     client = MilvusClient(uri=MILVUS_DB_PATH)
     if not client.has_collection(COLLECTION_NAME):
-        print(f"❌ Error: Colección '{COLLECTION_NAME}' no existe")
+        print(f"❌ Error: Collection '{COLLECTION_NAME}' does not exist")
         exit(1)
     
     # Get collection stats
     stats = client.get_collection_stats(COLLECTION_NAME)
-    print(f"   ✅ Colección '{COLLECTION_NAME}' cargada")
-    print(f"   📊 Entidades en Milvus: {stats['row_count']:,}")
+    print(f"   ✅ Collection '{COLLECTION_NAME}' loaded")
+    print(f"   📊 Entities in Milvus: {stats['row_count']:,}")
 except Exception as e:
-    print(f"❌ Error conectando a Milvus: {e}")
+    print(f"❌ Error connecting to Milvus: {e}")
     exit(1)
 
 # ============================================
@@ -168,7 +168,7 @@ def calculate_metrics(results_per_query, k_values):
     return summary
 
 def query_milvus_batch(embeddings, top_k=20):
-    """Query Milvus with batch of embeddings"""
+    """Query Milvus with a batch of embeddings"""
     vectors = [emb.tolist() for emb in embeddings]
     
     results = client.search(
@@ -184,8 +184,8 @@ def query_milvus_batch(embeddings, top_k=20):
 # ============================================
 # STEP 5: RUN EVALUATION
 # ============================================
-print("\n4️⃣ Ejecutando evaluación...")
-print(f"   Top-K valores: {TOP_K_VALUES}")
+print("\n4️⃣ Running evaluation...")
+print(f"   Top-K values: {TOP_K_VALUES}")
 print(f"   Batch size: {BATCH_SIZE}")
 
 # Store results per category
@@ -193,7 +193,7 @@ all_results = {cat: [] for cat in RANGES.keys()}
 
 # Process each category
 for category in ['rare', 'medium', 'common']:
-    print(f"\n   🔍 Evaluando categoría: {category.upper()}")
+    print(f"\n   🔍 Evaluating category: {category.upper()}")
     
     # Get test samples for this category
     cat_df = test_df_valid[test_df_valid['category'] == category].copy()
@@ -201,14 +201,14 @@ for category in ['rare', 'medium', 'common']:
     cat_embeddings = test_embeddings[cat_indices]
     
     if len(cat_df) == 0:
-        print(f"      ⚠️ Sin muestras para esta categoría")
+        print(f"      ⚠️ No samples for this category")
         continue
     
-    print(f"      Procesando {len(cat_df):,} queries...")
+    print(f"      Processing {len(cat_df):,} queries...")
     
     # Process in batches
-    for i in tqdm(range(0, len(cat_df), BATCH_SIZE), 
-                  desc=f"      {category}", 
+    for i in tqdm(range(0, len(cat_df), BATCH_SIZE),
+                  desc=f"      {category}",
                   leave=False):
         batch_df = cat_df.iloc[i:i+BATCH_SIZE]
         batch_embeddings = cat_embeddings[i:i+BATCH_SIZE]
@@ -230,7 +230,7 @@ for category in ['rare', 'medium', 'common']:
 # ============================================
 # STEP 6: CALCULATE METRICS
 # ============================================
-print("\n5️⃣ Calculando métricas...")
+print("\n5️⃣ Calculating metrics...")
 
 final_metrics = {}
 for category in ['rare', 'medium', 'common']:
@@ -241,27 +241,27 @@ for category in ['rare', 'medium', 'common']:
 # STEP 7: DISPLAY RESULTS
 # ============================================
 print("\n" + "="*80)
-print("📊 RESULTADOS DE EVALUACIÓN")
+print("📊 EVALUATION RESULTS")
 print("="*80)
 
 for category in ['rare', 'medium', 'common']:
     cat_range = RANGES[category]
     range_str = f"{cat_range[0]}-{int(cat_range[1]) if cat_range[1] != float('inf') else '∞'}"
     
-    print(f"\n🔸 {category.upper()} ({range_str} samples en train)")
+    print(f"\n🔸 {category.upper()} ({range_str} samples in train)")
     print("-" * 80)
     
     if category not in final_metrics:
-        print("   Sin datos para esta categoría")
+        print("   No data for this category")
         continue
     
     metrics = final_metrics[category]
     num_queries = metrics[TOP_K_VALUES[0]]['count']
-    print(f"   Queries evaluadas: {num_queries:,}")
+    print(f"   Queries evaluated: {num_queries:,}")
     print()
     
     # Table header
-    print(f"   {'Métrica':<15} {'Valor':>10}")
+    print(f"   {'Metric':<15} {'Value':>10}")
     print(f"   {'-'*15} {'-'*10}")
     
     # Recall@K
@@ -276,7 +276,7 @@ for category in ['rare', 'medium', 'common']:
 # ============================================
 # STEP 8: SAVE RESULTS
 # ============================================
-print("\n6️⃣ Guardando resultados...")
+print("\n6️⃣ Saving results...")
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 results_file = os.path.join(RESULTS_DIR, f"evaluation_by_genus_size_{timestamp}.json")
@@ -302,7 +302,7 @@ results_output = {
 with open(results_file, 'w') as f:
     json.dump(results_output, f, indent=2)
 
-print(f"   ✅ Resultados guardados en: {results_file}")
+print(f"   ✅ Results saved to: {results_file}")
 
 # Save detailed CSV
 csv_file = os.path.join(RESULTS_DIR, f"detailed_results_{timestamp}.csv")
@@ -314,20 +314,20 @@ for category in ['rare', 'medium', 'common']:
             'category': category,
             'true_genus': result['true_genus'],
             'query_header': result['query_header'],
-            'rank': result['retrieved_genera'].index(result['true_genus']) + 1 
+            'rank': result['retrieved_genera'].index(result['true_genus']) + 1
                     if result['true_genus'] in result['retrieved_genera'] else -1,
             'top5_retrieved': ','.join(result['retrieved_genera'][:5])
         })
 
 detailed_df = pd.DataFrame(detailed_rows)
 detailed_df.to_csv(csv_file, index=False)
-print(f"   ✅ Resultados detallados guardados en: {csv_file}")
+print(f"   ✅ Detailed results saved to: {csv_file}")
 
 # ============================================
 # STEP 9: SUMMARY STATISTICS
 # ============================================
 print("\n" + "="*80)
-print("📈 RESUMEN COMPARATIVO")
+print("📈 COMPARATIVE SUMMARY")
 print("="*80)
 
 comparison_df = pd.DataFrame({
@@ -353,9 +353,9 @@ comparison_df = pd.DataFrame({
 print(comparison_df.to_string(index=False))
 
 print("\n" + "="*80)
-print("✅ EVALUACIÓN COMPLETADA")
+print("✅ EVALUATION COMPLETED")
 print("="*80)
-print(f"\nResultados guardados en: {RESULTS_DIR}/")
+print(f"\nResults saved to: {RESULTS_DIR}/")
 print(f"  • JSON: {os.path.basename(results_file)}")
 print(f"  • CSV:  {os.path.basename(csv_file)}")
 print("="*80)

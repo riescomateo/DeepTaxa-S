@@ -8,7 +8,7 @@ from datetime import datetime
 import hashlib
 
 print("="*80)
-print("🔍 VERIFICACIÓN DE DUPLICADOS EN BASE DE DATOS")
+print("🔍 DUPLICATE SEQUENCE VERIFICATION IN DATABASE")
 print("="*80)
 
 # ============================================
@@ -21,12 +21,9 @@ parser.add_argument('--input_csv', type=str, required=True,
 parser.add_argument('--input_embeddings', type=str, required=True,
                    help='Path to embeddings (.npy) corresponding to input_csv')
 
-
 # Duplicate detection methods
-
 parser.add_argument('--batch_size', type=int, default=100,
                    help='Batch size for processing')
-
 
 args = parser.parse_args()
 
@@ -56,7 +53,7 @@ if not os.path.exists(INPUT_EMBEDDINGS):
     print(f"❌ Error: Embeddings not found: {INPUT_EMBEDDINGS}")
     exit(1)
 
-print(f"\n📋 Configuración:")
+print(f"\n📋 Configuration:")
 print(f"   Input CSV: {INPUT_CSV}")
 print(f"   Input embeddings: {INPUT_EMBEDDINGS}")
 print(f"   Database: {MILVUS_DB_PATH}")
@@ -64,13 +61,13 @@ print(f"   Collection: {COLLECTION_NAME}")
 print(f"   Method: {METHOD}")
 if 'embedding' in METHOD:
     print(f"   Similarity threshold: {SIMILARITY_THRESHOLD}")
-    print(f"      (0.9999 = casi idénticas, 0.95 = muy similares)")
+    print(f"      (0.9999 = almost identical, 0.95 = very similar)")
 print(f"   Output: {OUTPUT_CSV}")
 
 # ============================================
 # LOAD DATA
 # ============================================
-print(f"\n1️⃣ Cargando datos...")
+print(f"\n1️⃣ Loading data...")
 
 try:
     df = pd.read_csv(INPUT_CSV)
@@ -101,7 +98,7 @@ if 'Header' not in df.columns:
 # ============================================
 # CONNECT TO MILVUS
 # ============================================
-print(f"\n2️⃣ Conectando a Milvus...")
+print(f"\n2️⃣ Connecting to Milvus...")
 
 try:
     client = MilvusClient(uri=MILVUS_DB_PATH)
@@ -128,21 +125,21 @@ def create_taxonomy_key(row):
 
 def check_taxonomy_duplicates(df, client, batch_size=100):
     """
-    Method 1: Check by complete taxonomy
-    Verifies if same taxonomic classification exists.
+    Method 1: Check by complete taxonomy.
+    Verifies if the same taxonomic classification already exists.
     """
-    print(f"\n   🌳 Método: Verificación por taxonomía completa")
-    print(f"      - Detecta: Misma clasificación taxonómica (Reino→Especie)")
-    print(f"      - Uso: Evitar organismos duplicados")
+    print(f"\n   🌳 Method: Full taxonomy verification")
+    print(f"      - Detects: Same taxonomic classification (Kingdom→Species)")
+    print(f"      - Use case: Avoid duplicate organisms")
     
     duplicates = []
     
     # Create taxonomy key for input
     df['taxonomy_key'] = df.apply(create_taxonomy_key, axis=1)
     
-    print(f"   🔍 Verificando {len(df):,} taxonomías...")
+    print(f"   🔍 Checking {len(df):,} taxonomies...")
     
-    for i in tqdm(range(0, len(df), batch_size), desc="      Verificando"):
+    for i in tqdm(range(0, len(df), batch_size), desc="      Checking"):
         batch = df.iloc[i:i+batch_size]
         
         for idx, row in batch.iterrows():
@@ -182,26 +179,26 @@ def check_taxonomy_duplicates(df, client, batch_size=100):
 
 def check_embedding_similarity_duplicates(df, embeddings, client, threshold=0.9999, batch_size=100):
     """
-    Method 2: Check by embedding similarity
+    Method 2: Check by embedding similarity.
     Finds sequences with very similar embeddings.
-    High threshold (0.9999) = almost identical sequences
-    Lower threshold (0.95-0.98) = similar sequences
+    High threshold (0.9999) = almost identical sequences.
+    Lower threshold (0.95-0.98) = similar sequences.
     """
-    print(f"\n   🧮 Método: Verificación por similitud de embeddings")
-    print(f"      - Detecta: Secuencias con embeddings muy similares")
+    print(f"\n   🧮 Method: Embedding similarity verification")
+    print(f"      - Detects: Sequences with very similar embeddings")
     print(f"      - Threshold: {threshold}")
     if threshold >= 0.999:
-        print(f"      - Interpretación: Secuencias casi idénticas")
+        print(f"      - Interpretation: Almost identical sequences")
     elif threshold >= 0.95:
-        print(f"      - Interpretación: Secuencias muy similares")
+        print(f"      - Interpretation: Very similar sequences")
     else:
-        print(f"      - Interpretación: Secuencias moderadamente similares")
+        print(f"      - Interpretation: Moderately similar sequences")
     
     duplicates = []
     
-    print(f"   🔍 Buscando vecinos muy cercanos para {len(df):,} secuencias...")
+    print(f"   🔍 Searching for nearest neighbors for {len(df):,} sequences...")
     
-    for i in tqdm(range(0, len(df), batch_size), desc="      Verificando"):
+    for i in tqdm(range(0, len(df), batch_size), desc="      Checking"):
         batch_df = df.iloc[i:i+batch_size]
         batch_embeddings = embeddings[i:i+batch_size]
         
@@ -251,27 +248,27 @@ def check_embedding_similarity_duplicates(df, embeddings, client, threshold=0.99
 
 def check_combined_duplicates(df, embeddings, client, threshold=0.9999, batch_size=100):
     """
-    Method 3: Combined approach
+    Method 3: Combined approach.
     First checks embedding similarity, then validates with taxonomy.
     """
-    print(f"\n   🔬 Método: Combinado (embedding + taxonomía)")
-    print(f"      - Paso 1: Busca similitud de embedding >= {threshold}")
-    print(f"      - Paso 2: Valida que taxonomía también coincida")
-    print(f"      - Más robusto: evita falsos positivos")
+    print(f"\n   🔬 Method: Combined (embedding + taxonomy)")
+    print(f"      - Step 1: Find embedding similarity >= {threshold}")
+    print(f"      - Step 2: Validate that taxonomy also matches")
+    print(f"      - More robust: avoids false positives")
     
     # First get embedding similarity candidates
     embedding_dups = check_embedding_similarity_duplicates(df, embeddings, client, threshold, batch_size)
     
-    print(f"\n   ✅ Candidatos por embedding: {len(embedding_dups)}")
+    print(f"\n   ✅ Candidates by embedding: {len(embedding_dups)}")
     
     if len(embedding_dups) == 0:
         return []
     
-    print(f"   🔍 Validando taxonomía...")
+    print(f"   🔍 Validating taxonomy...")
     
     validated_duplicates = []
     
-    for dup in tqdm(embedding_dups, desc="      Validando"):
+    for dup in tqdm(embedding_dups, desc="      Validating"):
         idx = dup['input_index']
         row = df.iloc[idx]
         
@@ -306,14 +303,14 @@ def check_combined_duplicates(df, embeddings, client, threshold=0.9999, batch_si
     
     # Count validated matches
     validated_count = sum(1 for d in validated_duplicates if d.get('taxonomy_match') == 'YES')
-    print(f"   ✅ Validados con taxonomía: {validated_count}/{len(validated_duplicates)}")
+    print(f"   ✅ Validated with taxonomy: {validated_count}/{len(validated_duplicates)}")
     
     return validated_duplicates
 
 # ============================================
 # RUN DUPLICATE CHECK
 # ============================================
-print(f"\n3️⃣ Ejecutando verificación de duplicados...")
+print(f"\n3️⃣ Running duplicate verification...")
 
 duplicates = []
 
@@ -329,14 +326,14 @@ elif METHOD == 'combined':
 # ============================================
 # GENERATE REPORT
 # ============================================
-print(f"\n4️⃣ Generando reporte...")
+print(f"\n4️⃣ Generating report...")
 
 duplicate_indices = set([d['input_index'] for d in duplicates])
 num_unique = len(df) - len(duplicate_indices)
 
 if len(duplicates) == 0:
-    print(f"\n   ✅ ¡No se encontraron duplicados!")
-    print(f"   Todas las {len(df):,} secuencias son nuevas")
+    print(f"\n   ✅ No duplicates found!")
+    print(f"   All {len(df):,} sequences are new")
     
     # Create summary report
     summary = {
@@ -350,23 +347,23 @@ if len(duplicates) == 0:
     report_df = pd.DataFrame([summary])
     
 else:
-    print(f"\n   ⚠️ Encontrados {len(duplicates)} duplicados potenciales")
-    print(f"   📊 Afectan a {len(duplicate_indices)} secuencias de entrada")
+    print(f"\n   ⚠️ Found {len(duplicates)} potential duplicates")
+    print(f"   📊 Affecting {len(duplicate_indices)} input sequences")
     
     # Create detailed report
     report_df = pd.DataFrame(duplicates)
     
-    print(f"\n   📊 Resumen:")
-    print(f"      Total secuencias verificadas: {len(df):,}")
-    print(f"      Duplicados encontrados: {len(duplicates):,}")
-    print(f"      Secuencias únicas: {num_unique:,}")
-    print(f"      Secuencias duplicadas: {len(duplicate_indices):,}")
+    print(f"\n   📊 Summary:")
+    print(f"      Total sequences checked: {len(df):,}")
+    print(f"      Duplicates found: {len(duplicates):,}")
+    print(f"      Unique sequences: {num_unique:,}")
+    print(f"      Duplicate sequences: {len(duplicate_indices):,}")
 
 # Save report
 try:
     report_df.to_csv(OUTPUT_CSV, index=False)
     file_size = os.path.getsize(OUTPUT_CSV) / 1e3
-    print(f"\n   ✅ Reporte guardado: {OUTPUT_CSV}")
+    print(f"\n   ✅ Report saved: {OUTPUT_CSV}")
     print(f"   📦 Size: {file_size:.1f} KB")
 except Exception as e:
     print(f"\n   ❌ Error saving report: {e}")
@@ -376,30 +373,30 @@ except Exception as e:
 # ============================================
 if len(duplicates) > 0:
     print(f"\n" + "="*80)
-    print("📋 DUPLICADOS DETECTADOS - PRIMEROS 10 EJEMPLOS")
+    print("📋 DETECTED DUPLICATES - FIRST 10 EXAMPLES")
     print("="*80)
     
     for i, dup in enumerate(duplicates[:10]):
         print(f"\n{i+1}. Input: {dup['input_header']}")
         if 'input_genus' in dup:
             print(f"   Genus: {dup['input_genus']}")
-        print(f"   Secuencia: {dup['input_sequence']}")
-        print(f"   ↓ DUPLICA A ↓")
+        print(f"   Sequence: {dup['input_sequence']}")
+        print(f"   ↓ DUPLICATES ↓")
         print(f"   DB ID: {dup['duplicate_id']}")
         if 'duplicate_genus' in dup:
             print(f"   Genus: {dup['duplicate_genus']}")
-        print(f"   Secuencia: {dup['duplicate_sequence']}")
+        print(f"   Sequence: {dup['duplicate_sequence']}")
         print(f"   Match: {dup['match_type']}")
         if 'similarity' in dup:
-            print(f"   Similitud: {dup['similarity']:.6f} ({dup['similarity']*100:.4f}%)")
+            print(f"   Similarity: {dup['similarity']:.6f} ({dup['similarity']*100:.4f}%)")
         if 'taxonomy_match' in dup:
-            print(f"   Taxonomía coincide: {dup['taxonomy_match']}")
+            print(f"   Taxonomy match: {dup['taxonomy_match']}")
     
     if len(duplicates) > 10:
-        print(f"\n   ... y {len(duplicates) - 10} más (ver CSV completo)")
+        print(f"\n   ... and {len(duplicates) - 10} more (see full CSV)")
 
 print("\n" + "="*80)
-print("✅ VERIFICACIÓN COMPLETADA")
+print("✅ VERIFICATION COMPLETED")
 print("="*80)
 print(f"🕐 Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print("="*80)
@@ -410,34 +407,34 @@ print("="*80)
 if len(duplicates) > 0:
     unique_indices = sorted([i for i in range(len(df)) if i not in duplicate_indices])
     
-    print(f"\n💡 PASOS SIGUIENTES:")
-    print(f"\n   Opción 1 - Insertar solo secuencias únicas:")
+    print(f"\n💡 NEXT STEPS:")
+    print(f"\n   Option 1 - Insert only unique sequences:")
     print(f"   ┌─────────────────────────────────────────────")
-    print(f"   │ Total a insertar: {len(unique_indices):,} secuencias")
-    print(f"   │ Duplicadas omitidas: {len(duplicate_indices):,} secuencias")
+    print(f"   │ Total to insert: {len(unique_indices):,} sequences")
+    print(f"   │ Duplicates skipped: {len(duplicate_indices):,} sequences")
     print(f"   └─────────────────────────────────────────────")
     
     # Save list of unique indices
     unique_indices_file = OUTPUT_CSV.replace('.csv', '_unique_indices.txt')
     with open(unique_indices_file, 'w') as f:
         f.write('\n'.join(map(str, unique_indices)))
-    print(f"\n   ✅ Índices únicos guardados: {unique_indices_file}")
+    print(f"\n   ✅ Unique indices saved: {unique_indices_file}")
     
     # Save filtered CSV and embeddings info
     filtered_csv = OUTPUT_CSV.replace('.csv', '_unique_only.csv')
     df_unique = df.iloc[unique_indices]
     df_unique.to_csv(filtered_csv, index=False)
-    print(f"   ✅ CSV filtrado guardado: {filtered_csv}")
+    print(f"   ✅ Filtered CSV saved: {filtered_csv}")
     
-    print(f"\n   Para filtrar embeddings en Python:")
+    print(f"\n   To filter embeddings in Python:")
     print(f"   >>> unique_indices = np.loadtxt('{unique_indices_file}', dtype=int)")
     print(f"   >>> unique_embeddings = embeddings[unique_indices]")
     print(f"   >>> np.save('unique_embeddings.npy', unique_embeddings)")
     
-    print(f"\n   Opción 2 - Revisar duplicados manualmente:")
-    print(f"   Abre: {OUTPUT_CSV}")
-    print(f"   Decide caso por caso si son realmente duplicados")
+    print(f"\n   Option 2 - Review duplicates manually:")
+    print(f"   Open: {OUTPUT_CSV}")
+    print(f"   Decide case by case whether they are true duplicates")
 
 else:
-    print(f"\n✅ TODAS LAS SECUENCIAS SON ÚNICAS")
-    print(f"   Puedes proceder a insertarlas en la base de datos sin problemas.")
+    print(f"\n✅ ALL SEQUENCES ARE UNIQUE")
+    print(f"   You can proceed to insert them into the database without issues.")
