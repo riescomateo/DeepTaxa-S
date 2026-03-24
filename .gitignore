@@ -19,3 +19,6 @@ gpuhub-tmp/
 # Configuración de editores
 .vscode/
 .idea/
+
+#Files 
+README(v1).txt
