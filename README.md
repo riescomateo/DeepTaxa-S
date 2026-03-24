@@ -78,6 +78,7 @@ python classify_sequences.py \
 📌 Notes
 Designed for genus-level classification due to limitations in COI sequence resolution
 GPU recommended for embedding generation (CUDA)
+```
 
 ## 📄 License
 
